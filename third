@@ -1,0 +1,201 @@
+package movieGet_infor;
+
+import com.sun.java.util.jar.pack.*;
+
+import java.lang.String;
+import java.io.IOException;
+import java.lang.Package;
+import org.jsoup.Jsoup;
+import org.jsoup.nodes.Document;
+import org.jsoup.nodes.Element;
+import org.jsoup.select.Elements;
+
+import javax.xml.stream.events.*;
+/*import java.beans.Statement;*/
+import java.sql.Statement;
+import java.sql.Connection;
+import java.sql.DriverManager;
+import java.sql.SQLException;
+import java.util.LinkedList;
+import java.util.List;
+
+/**
+ * Created by pl on 15-6-14.
+ */
+public class movieinformation {
+    private List<movie> movieslist;   //一个容器保存电影的信息
+    private String eachpageAddr = "http://www.xunleigang.com/forum.php?mod=forumdisplay&fid=2&ortid=1&sortid=1&page=";
+    private String eachmovieAddr = "http://www.xunleigang.com/";
+    private String originWebAddress = "http://www.xunleigang.com/";
+    //int threadId = 1;
+    private int maxWebCount = 250;  //抓取网页数量
+
+
+    public movieinformation(){
+        movieslist = new LinkedList<movie>();
+    }
+
+    //获取电影的信息并保存到数据库中
+    public void getInfoToDB(){
+        int countmovie = 1;
+        int j = 3947;
+        Connection connection = null;   //连接数据库
+        String sql;   //要执行的数据库语句
+        Statement statement = null;
+
+        String url = "jdbc:mysql://localhost:3306/Movieshow?user=root&password=pl123456";
+        try {
+            Class.forName("com.mysql.jdbc.Driver");
+            System.out.println("加载驱动程序成功!");
+            connection = DriverManager.getConnection(url);
+            statement = (Statement) connection.createStatement();
+        }catch (ClassNotFoundException e){
+            e.printStackTrace();
+            System.out.println("加载驱动程序失败!");
+            try {
+                connection.close();
+            }catch (SQLException e1){
+                e1.printStackTrace();
+            }
+        }catch (SQLException e){
+            e.printStackTrace();
+            System.out.println("加载驱动程序失败!");
+            try {
+                connection.close();
+            }catch (SQLException e1){
+                e1.printStackTrace();
+            }
+        }
+
+        for (int i = 160; i < 251; i++){
+            Document document;
+
+            document = (Document) Jsoup.connect(eachmovieAddr + i).userAgent("Mozilla");
+            //document = Jsoup.connect(eachmovieAddr + i).userAgent("Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/38.0.2125.122 Safari/537.36 QIHU 360EE").timeout(10000).get();
+            //默认获取的网址是手机的网页代码，这个设置让网页认为我们用的是电脑火狐浏览器
+            //}catch (java.net.SocketTimeoutException e){
+            // e.printStackTrace();
+            //continue;
+            Elements totalmovies = document.getElementsByAttributeValue("style", "width:150px;");   //通过属性值
+
+            for (Element t :totalmovies){
+                String pageAddr = originWebAddress + "/" +t.select("a").first().attr("href");   //获取即将抓取网页的链接
+
+                System.out.println("正在抓取第" + countmovie++ + "个" +pageAddr);
+
+                Document moviedoc = null;
+                try {
+                    moviedoc = Jsoup.connect(pageAddr).userAgent("Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/38.0.2125.122 Safari/537.36 QIHU 360EE").timeout(10000).get();
+                }catch (java.net.SocketTimeoutException e){
+                    e.printStackTrace();
+                }catch (IOException e){
+                    e.printStackTrace();
+                    continue;
+                }
+
+                movie newmovie = new movie();
+                movieslist.add(newmovie);
+
+                newmovie.name = moviedoc.select("caption").first().text().replaceAll(" 影片信息", " ");
+                newmovie.name = newmovie.name.replace('/',' ').replace('\'','\"');
+                Element infoBody = moviedoc.getElementsByClass("typeoption").first();
+
+                Elements imageQuality = infoBody.select("tr");
+
+                newmovie.quantity = imageQuality.get(0).select("a").first().text();
+
+                Elements classifyA = imageQuality.select("a");
+                for (Element n: classifyA){
+                    newmovie.classify.append(n.text()).append("/");
+                }
+                newmovie.classify.deleteCharAt(newmovie.classify.length()-1);
+
+                Elements areaA = imageQuality.get(2).select("a");
+                for (Element m: areaA){
+                    newmovie.area.append(m.text()).append("/");
+                }
+                if (newmovie.area.length() > 0){
+                    newmovie.area.deleteCharAt(newmovie.area.length() - 1);
+                }
+
+                newmovie.year = imageQuality.get(3).select("a").first().text();
+
+                Elements directorA = imageQuality.get(4).select("a");
+                for (Element p : directorA){
+                    newmovie.director.append(p.text()).append("/");
+                }
+                if (newmovie.director.length() > 0){
+                    newmovie.director.deleteCharAt(newmovie.director.length() - 1);
+                }
+                newmovie.director = new StringBuffer(newmovie.director.toString().replace('\'','\''));
+
+                Elements mainActor = imageQuality.get(5).select("a");
+                for (Element o : mainActor){
+                    newmovie.actor.append(o.text()).append("/");
+                }
+                if (newmovie.actor.length() > 0){
+                    newmovie.actor.deleteCharAt(newmovie.actor.length() - 1);
+                }
+                newmovie.actor = new StringBuffer(newmovie.actor.toString().replace('\'','\''));
+
+                newmovie.score = imageQuality.get(6).select("td").first().text();
+                newmovie.score = newmovie.score.replace('\'','\'');
+
+                newmovie.pictureAddr = eachmovieAddr + "/" + moviedoc.select("img").first().attr("src");
+
+                newmovie.introduction = moviedoc.getElementsByClass("t_fsz").first().getElementsByClass("t-f").first().text();
+
+                int start = newmovie.introduction.indexOf("剧情简介");
+                int end = newmovie.introduction.indexOf(moviedoc.select("em").get(3).text(),start);
+
+                if (start != -1){
+                    if (end != -1){
+                        newmovie.introduction = newmovie.introduction.substring(start + 4 , end);
+                    }else {
+                        newmovie.introduction = newmovie.introduction.substring(start + 4,newmovie.introduction.length());
+                    }
+                }else {
+                    if (end != -1){
+                        newmovie.introduction = newmovie.introduction.substring(0,end);
+                    }else {
+                        newmovie.introduction = newmovie.introduction.substring(0,newmovie.introduction.length());
+                    }
+                }
+
+                newmovie.introduction = newmovie.introduction.replace('\'','\"');
+
+                newmovie.movieAddr = pageAddr;
+            }
+
+            for (movie m : movieslist){
+                sql = "insert into movie values('" + j +"','" +m.name+ "','" + m.pictureAddr + "','" + m.quantity + "','" + m.classify + "','" + m.area + "','" + m.year + "','" + m.director + "','" + m.actor + "','" + m.score + "','" + m.introduction + "','" + m.movieAddr + "')";
+                try {
+                    //assert statement != null;
+                    //statement.execute(sql);
+                    statement.executeUpdate(sql);
+
+                    j++;
+                }catch (SQLException e){
+                    e.printStackTrace();
+                    continue;
+                } catch (Exception e) {
+                    e.printStackTrace();
+                }
+
+            }
+            movieslist.clear();
+        }
+        try {
+            connection.close();
+        }catch (SQLException e){
+            e.printStackTrace();
+        }
+    }
+
+    public static void main(String[] args) {
+        movieinformation Movie = new movieinformation();
+        Movie.getInfoToDB();
+    }
+}
+
+
